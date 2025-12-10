@@ -204,5 +204,11 @@ func handler(w http.ResponseWriter, r *http.Request) {
 func main() {
 	loadTodos()
 	http.HandleFunc("/", handler)
-	http.ListenAndServe(":8080", nil)
+
+	// PORT 環境変数を使う（クラウドではここで指定される）
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080" // ローカル用のデフォルト
+	}
+	http.ListenAndServe(":"+port, nil)
 }

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <title>タスク編集</title>
+    <style>
+        body {
+            background: #f0f2f5;
+            font-family: sans-serif;
+            max-width: 600px;
+            margin: auto;
+            padding: 30px;
+        }
+
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+        }
+
+        h2 {
+            margin-top: 0;
+            text-align: center;
+        }
+
+        input {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+        }
+
+        .btn-save {
+            width: 100%;
+            padding: 10px;
+            background: #28a745;
+            color: white;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+        }
+
+        .btn-save:hover {
+            background: #1e7e34;
+        }
+
+        .back-link {
+            display: block;
+            margin-top: 15px;
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="card">
+        <h2>タスク編集</h2>
+
+        <form method="POST">
+
+            <input type="hidden" name="id" value="{{.ID}}">
+
+            <input type="text" name="task" value="{{.Todo.Task}}" placeholder="タスク名">
+
+            <input type="date" name="due" value="{{.Todo.Due}}">
+
+            <input type="number" name="duration" value="{{.Todo.Duration}}" placeholder="所要時間（分）">
+
+            <input type="number" name="cost" value="{{.Todo.Cost}}" placeholder="費用（円）">
+
+            <button class="btn-save">保存</button>
+        </form>
+
+        <a class="back-link" href="/">← 戻る</a>
+    </div>
+
+</body>
+
+</html>

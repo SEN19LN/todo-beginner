@@ -9,6 +9,15 @@ import (
 	"strconv"
 )
 
+// ---------------------
+// データ構造
+// ---------------------
+
+type User struct {
+	Name     string
+	Password string
+}
+
 type Todo struct {
 	Task        string
 	Due         string
@@ -19,196 +28,222 @@ type Todo struct {
 	Done        bool
 }
 
-var todos []Todo
-
-const dataFile = "todo.json"
-
-func saveTodos() {
-	data, _ := json.MarshalIndent(todos, "", "  ")
-	_ = ioutil.WriteFile(dataFile, data, 0644)
+var users = []User{
+	{Name: "admin", Password: "1234"},
 }
 
-func loadTodos() {
-	if _, err := os.Stat(dataFile); err == nil {
-		data, _ := ioutil.ReadFile(dataFile)
-		_ = json.Unmarshal(data, &todos)
-	}
-}
+const dataDir = "data"
+
+// ---------------------
+// メインのハンドラー
+// ---------------------
 
 func handler(w http.ResponseWriter, r *http.Request) {
-	// 完了トグル処理
+
+	loggedIn := false
+	username := ""
+	todos := []Todo{}
+
+	// ● Cookie でログイン判定
+	cookie, err := r.Cookie("session_user")
+	if err == nil && cookie.Value != "" {
+		username = cookie.Value
+		loggedIn = true
+		todos = loadTodosForUser(username)
+	}
+
+	// ---------------------
+	// ログイン処理
+	// ---------------------
+	if r.Method == "POST" && r.FormValue("login") != "" {
+		name := r.FormValue("username")
+		pass := r.FormValue("password")
+
+		for _, u := range users {
+			if u.Name == name && u.Password == pass {
+
+				// Cookie 保存
+				http.SetCookie(w, &http.Cookie{
+					Name:  "session_user",
+					Value: name,
+					Path:  "/",
+				})
+
+				loggedIn = true
+				username = name
+				todos = loadTodosForUser(name)
+
+				http.Redirect(w, r, "/", http.StatusFound)
+				return
+			}
+		}
+	}
+
+	// ログインしていない場合 → login.html へ
+	if !loggedIn {
+		renderTemplate(w, "login.html", nil)
+		return
+	}
+
+	// ---------------------
+	// ログアウト
+	// ---------------------
+	if r.Method == "POST" && r.FormValue("logout") != "" {
+		http.SetCookie(w, &http.Cookie{
+			Name:   "session_user",
+			Value:  "",
+			Path:   "/",
+			MaxAge: -1,
+		})
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+
+	// ---------------------
+	// 完了トグル
+	// ---------------------
 	if r.Method == "POST" && r.FormValue("toggle") != "" {
 		i, _ := strconv.Atoi(r.FormValue("toggle"))
 		if i >= 0 && i < len(todos) {
 			todos[i].Done = !todos[i].Done
-			saveTodos()
-
+			saveTodosForUser(username, todos)
 		}
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
 	}
 
-	// 新規追加処理
+	// ---------------------
+	// 新規追加
+	// ---------------------
 	if r.Method == "POST" && r.FormValue("task") != "" {
 		task := r.FormValue("task")
 		due := r.FormValue("due")
-		durationInput, _ := strconv.Atoi(r.FormValue("duration"))
-		costInput, _ := strconv.Atoi(r.FormValue("cost"))
-
-		durationStr := ""
-		costStr := ""
-
-		if durationInput == 15 {
-			durationStr = "15分以内"
-		} else {
-			durationStr = strconv.Itoa(durationInput) + "分"
-		}
-
-		if costInput == 1000 {
-			costStr = "1000円以内"
-		} else {
-			costStr = strconv.Itoa(costInput) + "円"
-		}
+		duration, _ := strconv.Atoi(r.FormValue("duration"))
+		cost, _ := strconv.Atoi(r.FormValue("cost"))
 
 		todos = append(todos, Todo{
 			Task:        task,
 			Due:         due,
-			Duration:    durationInput,
-			Cost:        costInput,
-			DurationStr: durationStr,
-			CostStr:     costStr,
+			Duration:    duration,
+			Cost:        cost,
+			DurationStr: strconv.Itoa(duration) + "分",
+			CostStr:     strconv.Itoa(cost) + "円",
 			Done:        false,
 		})
-		saveTodos()
 
+		saveTodosForUser(username, todos)
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
 	}
 
-	tmpl := `
-	<!DOCTYPE html>
-	<html>
-	<head>
-		<meta charset="UTF-8">
-		<title>ToDo Beginner</title>
-		<style>
-	body {
-		font-family: sans-serif;
-		background: #f5f5f5;
-		padding: 20px;
+	// ---------------------
+	// 編集フォーム表示
+	// ---------------------
+	if r.URL.Path == "/edit" && r.Method == "GET" {
+
+		id, _ := strconv.Atoi(r.URL.Query().Get("id"))
+
+		if id < 0 || id >= len(todos) {
+			http.NotFound(w, r)
+			return
+		}
+
+		renderTemplate(w, "edit.html", struct {
+			ID   int
+			Todo Todo
+		}{ID: id, Todo: todos[id]})
+
+		return
 	}
 
-	h1 {
-		text-align: center;
+	// ---------------------
+	// 編集保存処理
+	// ---------------------
+	if r.URL.Path == "/edit" && r.Method == "POST" {
+
+		id, _ := strconv.Atoi(r.FormValue("id"))
+
+		if id >= 0 && id < len(todos) {
+
+			todos[id].Task = r.FormValue("task")
+			todos[id].Due = r.FormValue("due")
+
+			duration, _ := strconv.Atoi(r.FormValue("duration"))
+			cost, _ := strconv.Atoi(r.FormValue("cost"))
+
+			todos[id].Duration = duration
+			todos[id].Cost = cost
+
+			todos[id].DurationStr = strconv.Itoa(duration) + "分"
+			todos[id].CostStr = strconv.Itoa(cost) + "円"
+
+			saveTodosForUser(username, todos)
+		}
+
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
 	}
 
-	form {
-		background: white;
-		padding: 15px;
-		border-radius: 8px;
-		margin-bottom: 20px;
-		box-shadow: 0 0 5px rgba(0,0,0,0.1);
-	}
-
-	input, button {
-		font-size: 16px;
-		padding: 8px;
-		margin: 5px 0;
-		width: 100%;
-		box-sizing: border-box;
-	}
-
-	button {
-		background: #007bff;
-		color: white;
-		border: none;
-		border-radius: 5px;
-		cursor: pointer;
-	}
-
-	button:hover {
-		background: #0056b3;
-	}
-
-	.done {
-		text-decoration: line-through;
-		color: gray;
-	}
-
-	/* 数値入力の上下ボタンを消す */
-	input[type=number]::-webkit-inner-spin-button,
-	input[type=number]::-webkit-outer-spin-button {
-		-webkit-appearance: none;
-		margin: 0;
-	}
-
-	input[type=number] {
-		-moz-appearance: textfield;
-	}
-
-	ul {
-		list-style: none;
-		padding: 0;
-	}
-
-	li {
-		background: white;
-		padding: 10px;
-		margin-bottom: 10px;
-		border-radius: 5px;
-	}
-
-	.check-btn {
-		width: auto;
-		padding: 4px 8px;
-		font-size: 14px;
-		background: #ddd;
-		color: black;
-		margin-right: 8px;
-	}
-</style>
-
-
-	</head>
-	<body>
-		<h1>📝 ToDo Beginner</h1>
-
-		<form method="POST">
-			<input type="text" name="task" placeholder="やること">
-			<input type="date" name="due">
-			<input type="number" name="duration" placeholder="所要時間（分）" step="1">
-			<input type="number" name="cost" placeholder="費用（円）" step="1">
-			<button type="submit">追加</button>
-		</form>
-
-		<ul>
-			{{range $i, $t := .}}
-				<li>
-					<form method="POST" style="display:inline;">
-						<button class="check-btn" name="toggle" value="{{$i}}">✅</button>
-					</form>
-
-					<span class="{{if $t.Done}}done{{end}}">
-						{{$t.Task}}
-						（期限：{{$t.Due}} /
-						時間：{{$t.DurationStr}} /
-						費用：{{$t.CostStr}}）
-					</span>
-				</li>
-			{{end}}
-		</ul>
-	</body>
-	</html>
-	`
-
-	t, _ := template.New("web").Parse(tmpl)
-	t.Execute(w, todos)
+	// ---------------------
+	// 一覧ページ表示
+	// ---------------------
+	renderTemplate(w, "tasks.html", struct {
+		UserName string
+		Todos    []Todo
+	}{
+		UserName: username,
+		Todos:    todos,
+	})
 }
 
-func main() {
-	loadTodos()
-	http.HandleFunc("/", handler)
+// ---------------------
+// テンプレート描画
+// ---------------------
+func renderTemplate(w http.ResponseWriter, file string, data interface{}) {
+	t := template.Must(template.ParseFiles(
+		"templates/login.html",
+		"templates/tasks.html",
+		"templates/edit.html",
+	))
+	t.ExecuteTemplate(w, file, data)
+}
 
-	// PORT 環境変数を使う（クラウドではここで指定される）
+// ---------------------
+// JSON 保存
+// ---------------------
+func saveTodosForUser(username string, todos []Todo) {
+	os.MkdirAll(dataDir, 0755)
+	filename := dataDir + "/" + username + ".json"
+
+	data, _ := json.MarshalIndent(todos, "", "  ")
+	ioutil.WriteFile(filename, data, 0644)
+}
+
+// ---------------------
+// JSON 読み込み
+// ---------------------
+func loadTodosForUser(username string) []Todo {
+	filename := dataDir + "/" + username + ".json"
+
+	if _, err := os.Stat(filename); err == nil {
+		data, _ := ioutil.ReadFile(filename)
+		var t []Todo
+		json.Unmarshal(data, &t)
+		return t
+	}
+
+	return []Todo{}
+}
+
+// ---------------------
+func main() {
+	http.HandleFunc("/", handler)
+	http.HandleFunc("/edit", handler)
+
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080" // ローカル用のデフォルト
+		port = "8080"
 	}
+
 	http.ListenAndServe(":"+port, nil)
 }

@@ -1,249 +1,247 @@
 package main
 
 import (
-	"encoding/json"
+	"database/sql"
 	"html/template"
-	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
+
+	_ "github.com/lib/pq"
 )
 
-// ---------------------
-// データ構造
-// ---------------------
-
-type User struct {
-	Name     string
-	Password string
-}
-
+// Todo構造体
 type Todo struct {
-	Task        string
-	Due         string
-	Duration    int
-	Cost        int
-	DurationStr string
-	CostStr     string
-	Done        bool
+	ID       int
+	Task     string
+	Due      string
+	Duration int
+	Cost     int
+	Done     bool
 }
 
-var users = []User{
-	{Name: "admin", Password: "1234"},
+// DB変数（グローバル）
+var db *sql.DB
+
+// ------------------------------------------------------------
+// 📌 DBに接続（PostgreSQL）
+// ------------------------------------------------------------
+func initDB() {
+	var err error
+
+	// Render とローカル両対応
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		// ローカル開発用
+		dsn = "postgres://postgres:tkhr0719@localhost:5432/todoapp?sslmode=disable"
+	}
+
+	db, err = sql.Open("postgres", dsn)
+	if err != nil {
+		log.Fatal("DB接続エラー:", err)
+	}
+
+	// 接続テスト
+	if err = db.Ping(); err != nil {
+		log.Fatal("DBが起動していません:", err)
+	}
+
+	// テーブル作成
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS todos (
+			id SERIAL PRIMARY KEY,
+			task TEXT NOT NULL,
+			due TEXT,
+			duration INT,
+			cost INT,
+			done BOOLEAN DEFAULT FALSE
+		)
+	`)
+	if err != nil {
+		log.Fatal("テーブル作成エラー:", err)
+	}
+	log.Println("DB準備完了")
 }
 
-const dataDir = "data"
+// ------------------------------------------------------------
+// 📌 テンプレートロード
+// ------------------------------------------------------------
+var templates = template.Must(template.ParseGlob("templates/*.html"))
 
-// ---------------------
-// メインのハンドラー
-// ---------------------
-
-func handler(w http.ResponseWriter, r *http.Request) {
-
-	loggedIn := false
-	username := ""
-	todos := []Todo{}
-
-	// ● Cookie でログイン判定
-	cookie, err := r.Cookie("session_user")
-	if err == nil && cookie.Value != "" {
-		username = cookie.Value
-		loggedIn = true
-		todos = loadTodosForUser(username)
-	}
-
-	// ---------------------
-	// ログイン処理
-	// ---------------------
-	if r.Method == "POST" && r.FormValue("login") != "" {
-		name := r.FormValue("username")
-		pass := r.FormValue("password")
-
-		for _, u := range users {
-			if u.Name == name && u.Password == pass {
-
-				// Cookie 保存
-				http.SetCookie(w, &http.Cookie{
-					Name:  "session_user",
-					Value: name,
-					Path:  "/",
-				})
-
-				loggedIn = true
-				username = name
-				todos = loadTodosForUser(name)
-
-				http.Redirect(w, r, "/", http.StatusFound)
-				return
-			}
-		}
-	}
-
-	// ログインしていない場合 → login.html へ
-	if !loggedIn {
-		renderTemplate(w, "login.html", nil)
-		return
-	}
-
-	// ---------------------
-	// ログアウト
-	// ---------------------
-	if r.Method == "POST" && r.FormValue("logout") != "" {
-		http.SetCookie(w, &http.Cookie{
-			Name:   "session_user",
-			Value:  "",
-			Path:   "/",
-			MaxAge: -1,
-		})
-		http.Redirect(w, r, "/", http.StatusFound)
-		return
-	}
-
-	// ---------------------
-	// 完了トグル
-	// ---------------------
-	if r.Method == "POST" && r.FormValue("toggle") != "" {
-		i, _ := strconv.Atoi(r.FormValue("toggle"))
-		if i >= 0 && i < len(todos) {
-			todos[i].Done = !todos[i].Done
-			saveTodosForUser(username, todos)
-		}
-		http.Redirect(w, r, "/", http.StatusFound)
-		return
-	}
-
-	// ---------------------
-	// 新規追加
-	// ---------------------
-	if r.Method == "POST" && r.FormValue("task") != "" {
-		task := r.FormValue("task")
-		due := r.FormValue("due")
-		duration, _ := strconv.Atoi(r.FormValue("duration"))
-		cost, _ := strconv.Atoi(r.FormValue("cost"))
-
-		todos = append(todos, Todo{
-			Task:        task,
-			Due:         due,
-			Duration:    duration,
-			Cost:        cost,
-			DurationStr: strconv.Itoa(duration) + "分",
-			CostStr:     strconv.Itoa(cost) + "円",
-			Done:        false,
-		})
-
-		saveTodosForUser(username, todos)
-		http.Redirect(w, r, "/", http.StatusFound)
-		return
-	}
-
-	// ---------------------
-	// 編集フォーム表示
-	// ---------------------
-	if r.URL.Path == "/edit" && r.Method == "GET" {
-
-		id, _ := strconv.Atoi(r.URL.Query().Get("id"))
-
-		if id < 0 || id >= len(todos) {
-			http.NotFound(w, r)
-			return
-		}
-
-		renderTemplate(w, "edit.html", struct {
-			ID   int
-			Todo Todo
-		}{ID: id, Todo: todos[id]})
-
-		return
-	}
-
-	// ---------------------
-	// 編集保存処理
-	// ---------------------
-	if r.URL.Path == "/edit" && r.Method == "POST" {
-
-		id, _ := strconv.Atoi(r.FormValue("id"))
-
-		if id >= 0 && id < len(todos) {
-
-			todos[id].Task = r.FormValue("task")
-			todos[id].Due = r.FormValue("due")
-
-			duration, _ := strconv.Atoi(r.FormValue("duration"))
-			cost, _ := strconv.Atoi(r.FormValue("cost"))
-
-			todos[id].Duration = duration
-			todos[id].Cost = cost
-
-			todos[id].DurationStr = strconv.Itoa(duration) + "分"
-			todos[id].CostStr = strconv.Itoa(cost) + "円"
-
-			saveTodosForUser(username, todos)
-		}
-
-		http.Redirect(w, r, "/", http.StatusFound)
-		return
-	}
-
-	// ---------------------
-	// 一覧ページ表示
-	// ---------------------
-	renderTemplate(w, "tasks.html", struct {
-		UserName string
-		Todos    []Todo
-	}{
-		UserName: username,
-		Todos:    todos,
-	})
-}
-
-// ---------------------
-// テンプレート描画
-// ---------------------
-func renderTemplate(w http.ResponseWriter, file string, data interface{}) {
-	t := template.Must(template.ParseFiles(
-		"templates/login.html",
-		"templates/tasks.html",
-		"templates/edit.html",
-	))
-	t.ExecuteTemplate(w, file, data)
-}
-
-// ---------------------
-// JSON 保存
-// ---------------------
-func saveTodosForUser(username string, todos []Todo) {
-	os.MkdirAll(dataDir, 0755)
-	filename := dataDir + "/" + username + ".json"
-
-	data, _ := json.MarshalIndent(todos, "", "  ")
-	ioutil.WriteFile(filename, data, 0644)
-}
-
-// ---------------------
-// JSON 読み込み
-// ---------------------
-func loadTodosForUser(username string) []Todo {
-	filename := dataDir + "/" + username + ".json"
-
-	if _, err := os.Stat(filename); err == nil {
-		data, _ := ioutil.ReadFile(filename)
-		var t []Todo
-		json.Unmarshal(data, &t)
-		return t
-	}
-
-	return []Todo{}
-}
-
-// ---------------------
+// ------------------------------------------------------------
+// 📌 ルーティング設定
+// ------------------------------------------------------------
 func main() {
-	http.HandleFunc("/", handler)
-	http.HandleFunc("/edit", handler)
+	initDB() // DB初期化
 
+	http.HandleFunc("/", handleIndex)
+	http.HandleFunc("/add", handleAdd)
+	http.HandleFunc("/toggle", handleToggle)
+	http.HandleFunc("/delete", handleDelete)
+	http.HandleFunc("/edit", handleEditPage)
+	http.HandleFunc("/update", handleUpdate)
+	http.HandleFunc("/logout", handleLogout)
+
+	// PORT は Render が自動設定 → ローカルは 8080
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 
+	log.Println("起動中 http://localhost:" + port)
 	http.ListenAndServe(":"+port, nil)
+}
+
+// ------------------------------------------------------------
+// 📌 トップページ（一覧表示）
+// ------------------------------------------------------------
+func handleIndex(w http.ResponseWriter, r *http.Request) {
+	rows, err := db.Query("SELECT id, task, due, duration, cost, done FROM todos ORDER BY id DESC")
+	if err != nil {
+		http.Error(w, "データ取得エラー", 500)
+		return
+	}
+	defer rows.Close()
+
+	var todos []Todo
+	for rows.Next() {
+		var t Todo
+		rows.Scan(&t.ID, &t.Task, &t.Due, &t.Duration, &t.Cost, &t.Done)
+		todos = append(todos, t)
+	}
+
+	// ★ テンプレートが期待する形（UserName + Todos）
+	data := struct {
+		UserName string
+		Todos    []Todo
+	}{
+		UserName: "admin", // 今は固定（後でログインユーザー名を入れる）
+		Todos:    todos,
+	}
+
+	templates.ExecuteTemplate(w, "tasks.html", data)
+}
+
+// ------------------------------------------------------------
+// 📌 新規追加
+// ------------------------------------------------------------
+func handleAdd(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	task := r.FormValue("task")
+	due := r.FormValue("due")
+	dur, _ := strconv.Atoi(r.FormValue("duration"))
+	cost, _ := strconv.Atoi(r.FormValue("cost"))
+
+	_, err := db.Exec(
+		"INSERT INTO todos (task, due, duration, cost) VALUES ($1, $2, $3, $4)",
+		task, due, dur, cost,
+	)
+	if err != nil {
+		http.Error(w, "追加エラー", 500)
+		return
+	}
+
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// ------------------------------------------------------------
+// 📌 完了トグル（Done <-> 未完了）
+// ------------------------------------------------------------
+func handleToggle(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Redirect(w, r, "/", 303)
+		return
+	}
+
+	id := r.FormValue("id")
+	if id == "" {
+		http.Redirect(w, r, "/", 303)
+		return
+	}
+
+	_, err := db.Exec("UPDATE todos SET done = NOT done WHERE id = $1", id)
+	if err != nil {
+		http.Error(w, "更新エラー", 500)
+		return
+	}
+
+	http.Redirect(w, r, "/", 303)
+}
+
+// ------------------------------------------------------------
+// 📌 削除
+// ------------------------------------------------------------
+func handleDelete(w http.ResponseWriter, r *http.Request) {
+	id := r.FormValue("id")
+	if id == "" {
+		http.Redirect(w, r, "/", 303)
+		return
+	}
+
+	_, err := db.Exec("DELETE FROM todos WHERE id = $1", id)
+	if err != nil {
+		http.Error(w, "削除エラー", 500)
+		return
+	}
+
+	http.Redirect(w, r, "/", 303)
+}
+
+// ------------------------------------------------------------
+// 📌 編集ページの表示（edit.html）
+// ------------------------------------------------------------
+func handleEditPage(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+
+	var t Todo
+	err := db.QueryRow(
+		"SELECT id, task, due, duration, cost, done FROM todos WHERE id = $1",
+		id,
+	).Scan(&t.ID, &t.Task, &t.Due, &t.Duration, &t.Cost, &t.Done)
+
+	if err != nil {
+		http.Error(w, "データ取得エラー", 500)
+		return
+	}
+
+	templates.ExecuteTemplate(w, "edit.html", t)
+}
+
+// ------------------------------------------------------------
+// 📌 編集内容の保存
+// ------------------------------------------------------------
+func handleUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Redirect(w, r, "/", 303)
+		return
+	}
+
+	id := r.FormValue("id")
+	task := r.FormValue("task")
+	due := r.FormValue("due")
+	dur, _ := strconv.Atoi(r.FormValue("duration"))
+	cost, _ := strconv.Atoi(r.FormValue("cost"))
+
+	_, err := db.Exec(
+		"UPDATE todos SET task = $1, due = $2, duration = $3, cost = $4 WHERE id = $5",
+		task, due, dur, cost, id,
+	)
+	if err != nil {
+		http.Error(w, "更新エラー", 500)
+		return
+	}
+
+	http.Redirect(w, r, "/", 303)
+}
+
+// ------------------------------------------------------------
+// 📌 ログアウト（※現状はログインなしなのでダミー）
+// ------------------------------------------------------------
+func handleLogout(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/", 303)
 }

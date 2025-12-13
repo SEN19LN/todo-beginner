@@ -3,63 +3,51 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>ToDo一覧</title>
+    <title>ToDo Beginner</title>
     <style>
         body {
-            background: #eef0f3;
             font-family: sans-serif;
-            max-width: 700px;
-            margin: auto;
+            background: #f7f7f7;
+            margin: 0;
             padding: 20px;
         }
 
         h1 {
             text-align: center;
-            margin-bottom: 10px;
-        }
-
-        .top-bar {
-            text-align: right;
             margin-bottom: 20px;
         }
 
-        .logout-btn {
-            padding: 6px 12px;
-            background: #ff4d4d;
-            color: white;
-            border-radius: 5px;
-            border: none;
-            cursor: pointer;
+        .container {
+            max-width: 600px;
+            margin: auto;
         }
 
-        .logout-btn:hover {
-            background: #cc0000;
-        }
-
-        .card {
-            background: white;
+        form {
+            background: #fff;
             padding: 15px;
-            margin-bottom: 20px;
             border-radius: 8px;
-            box-shadow: 0 1px 8px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 0 8px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
         }
 
         input,
         button {
             width: 100%;
-            padding: 8px;
-            margin-top: 8px;
-            border-radius: 5px;
-            border: 1px solid #ccc;
+            padding: 10px;
+            font-size: 16px;
+            margin: 6px 0;
+            box-sizing: border-box;
         }
 
-        button.add-btn {
+        button {
             background: #007bff;
             color: white;
             border: none;
+            border-radius: 5px;
+            cursor: pointer;
         }
 
-        button.add-btn:hover {
+        button:hover {
             background: #0056b3;
         }
 
@@ -69,14 +57,15 @@
         }
 
         li {
-            background: white;
+            background: #fff;
             padding: 12px;
             margin-bottom: 10px;
-            border-radius: 6px;
-            box-shadow: 0 1px 6px rgba(0, 0, 0, 0.1);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+            border-radius: 5px;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
+        }
+
+        .task-info {
+            margin-bottom: 8px;
         }
 
         .done {
@@ -84,79 +73,92 @@
             color: gray;
         }
 
+        .row {
+            display: flex;
+            gap: 6px;
+        }
+
+        .row form {
+            flex: 1;
+            margin: 0;
+            padding: 0;
+            box-shadow: none;
+            background: none;
+        }
+
         .btn-small {
-            padding: 4px 8px;
+            padding: 6px;
             font-size: 14px;
         }
 
-        .toggle-btn {
-            background: #ddd;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
+        .btn-delete {
+            background: #ff4d4d;
         }
 
-        .edit-btn {
-            background: #ffc107;
-            color: black;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            margin-left: 6px;
-        }
-
-        .edit-btn:hover {
-            background: #e0a800;
+        .btn-delete:hover {
+            background: #cc0000;
         }
     </style>
 </head>
 
 <body>
 
-    <h1>📝 ToDo 一覧</h1>
+    <div class="container">
 
-    <p>こんにちは、{{.UserName}} さん</p>
+        <h1>📝 ToDo Beginner</h1>
 
-    <div class="top-bar">
-        <form method="POST">
-            <button class="logout-btn" name="logout" value="1">ログアウト</button>
+        <p>こんにちは、{{.UserName}} さん</p>
+
+        <form method="POST" action="/logout">
+            <button>ログアウト</button>
         </form>
-    </div>
 
-    <div class="card">
-        <form method="POST">
+        <!-- 新規タスク追加 -->
+        <form method="POST" action="/add">
             <input type="text" name="task" placeholder="やること">
             <input type="date" name="due">
-            <input type="number" name="duration" placeholder="所要時間（分）">
+            <input type="number" name="duration" placeholder="時間（分）">
             <input type="number" name="cost" placeholder="費用（円）">
-            <button class="add-btn">追加</button>
+            <button type="submit">追加</button>
         </form>
+
+        <!-- タスクリスト -->
+        <ul>
+            {{range .Todos}}
+            <li>
+                <div class="task-info {{if .Done}}done{{end}}">
+                    <strong>{{.Task}}</strong><br>
+                    期限：{{.Due}}　
+                    時間：{{.Duration}}分　
+                    費用：{{.Cost}}円
+                </div>
+
+                <div class="row">
+                    <!-- 完了トグル -->
+                    <form method="POST" action="/toggle">
+                        <input type="hidden" name="id" value="{{.ID}}">
+                        <button class="btn-small">
+                            {{if .Done}}↩ 未完了{{else}}✔ 完了{{end}}
+                        </button>
+                    </form>
+
+                    <!-- 編集 -->
+                    <form method="GET" action="/edit">
+                        <input type="hidden" name="id" value="{{.ID}}">
+                        <button class="btn-small">✏ 編集</button>
+                    </form>
+
+                    <!-- 削除 -->
+                    <form method="POST" action="/delete">
+                        <input type="hidden" name="id" value="{{.ID}}">
+                        <button class="btn-small btn-delete">🗑 削除</button>
+                    </form>
+                </div>
+            </li>
+            {{end}}
+        </ul>
+
     </div>
-
-    <ul>
-        {{range $i, $t := .Todos}}
-        <li>
-            <!-- 完了トグル -->
-            <form method="POST" style="display:inline;">
-                <button class="toggle-btn btn-small" name="toggle" value="{{$i}}">✔</button>
-            </form>
-
-            <div style="flex:1; margin-left:10px;" class="{{if $t.Done}}done{{end}}">
-                {{$t.Task}}
-                <br>
-                <small>
-                    （期限：{{$t.Due}} / 時間：{{$t.DurationStr}} / 費用：{{$t.CostStr}}）
-                </small>
-            </div>
-
-            <!-- 編集ボタン -->
-            <form action="/edit" method="GET" style="display:inline;">
-                <input type="hidden" name="id" value="{{$i}}">
-                <button class="edit-btn btn-small">編集</button>
-            </form>
-        </li>
-        {{end}}
-    </ul>
 
 </body>
 

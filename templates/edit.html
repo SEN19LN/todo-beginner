@@ -6,76 +6,56 @@
     <title>タスク編集</title>
     <style>
         body {
-            background: #f0f2f5;
             font-family: sans-serif;
-            max-width: 600px;
-            margin: auto;
-            padding: 30px;
+            background: #f7f7f7;
+            padding: 20px;
         }
 
-        .card {
+        .container {
+            max-width: 500px;
+            margin: auto;
             background: white;
             padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+            border-radius: 8px;
+            box-shadow: 0 0 8px rgba(0, 0, 0, 0.1);
         }
 
-        h2 {
-            margin-top: 0;
-            text-align: center;
-        }
-
-        input {
+        input,
+        button {
             width: 100%;
             padding: 10px;
-            margin: 10px 0;
-            border-radius: 6px;
-            border: 1px solid #ccc;
+            margin: 6px 0;
+            font-size: 16px;
         }
 
-        .btn-save {
-            width: 100%;
-            padding: 10px;
-            background: #28a745;
+        button {
+            background: #007bff;
             color: white;
-            border-radius: 6px;
             border: none;
-            cursor: pointer;
-        }
-
-        .btn-save:hover {
-            background: #1e7e34;
-        }
-
-        .back-link {
-            display: block;
-            margin-top: 15px;
-            text-align: center;
+            border-radius: 5px;
         }
     </style>
 </head>
 
 <body>
 
-    <div class="card">
-        <h2>タスク編集</h2>
+    <div class="container">
+        <h1>✏ タスク編集</h1>
 
-        <form method="POST">
-
+        <form method="POST" action="/update">
             <input type="hidden" name="id" value="{{.ID}}">
 
-            <input type="text" name="task" value="{{.Todo.Task}}" placeholder="タスク名">
+            <input type="text" name="task" value="{{.Task}}">
+            <input type="date" name="due" value="{{.Due}}">
+            <input type="number" name="duration" value="{{.Duration}}">
+            <input type="number" name="cost" value="{{.Cost}}">
 
-            <input type="date" name="due" value="{{.Todo.Due}}">
-
-            <input type="number" name="duration" value="{{.Todo.Duration}}" placeholder="所要時間（分）">
-
-            <input type="number" name="cost" value="{{.Todo.Cost}}" placeholder="費用（円）">
-
-            <button class="btn-save">保存</button>
+            <button type="submit">保存</button>
         </form>
 
-        <a class="back-link" href="/">← 戻る</a>
+        <form action="/" method="GET">
+            <button type="submit">戻る</button>
+        </form>
     </div>
 
 </body>

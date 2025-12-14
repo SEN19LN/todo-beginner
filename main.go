@@ -81,6 +81,7 @@ func main() {
 	http.HandleFunc("/delete", handleDelete)
 	http.HandleFunc("/edit", handleEditPage)
 	http.HandleFunc("/update", handleUpdate)
+	http.HandleFunc("/login", handleLogin)
 	http.HandleFunc("/logout", handleLogout)
 
 	// PORT は Render が自動設定 → ローカルは 8080
@@ -239,9 +240,50 @@ func handleUpdate(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", 303)
 }
 
+func handleLogin(w http.ResponseWriter, r *http.Request) {
+
+	// GET → ログイン画面表示
+	if r.Method == "GET" {
+		templates.ExecuteTemplate(w, "login.html", nil)
+		return
+	}
+
+	// POST → 認証処理
+	username := r.FormValue("username")
+	password := r.FormValue("password")
+
+	var userID int
+
+	err := db.QueryRow(
+		"SELECT id FROM users WHERE username = $1 AND password = $2",
+		username, password,
+	).Scan(&userID)
+
+	if err != nil {
+		// 認証失敗
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
+	// ✅ 認証成功 → Cookie に user_id 保存
+	http.SetCookie(w, &http.Cookie{
+		Name:  "user_id",
+		Value: strconv.Itoa(userID),
+		Path:  "/",
+	})
+
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
 // ------------------------------------------------------------
 // 📌 ログアウト（※現状はログインなしなのでダミー）
 // ------------------------------------------------------------
 func handleLogout(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/", 303)
+	http.SetCookie(w, &http.Cookie{
+		Name:   "user_id",
+		Value:  "",
+		Path:   "/",
+		MaxAge: -1,
+	})
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }

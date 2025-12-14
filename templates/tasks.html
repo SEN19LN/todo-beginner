@@ -14,12 +14,13 @@
 
         h1 {
             text-align: center;
-            margin-bottom: 20px;
+            margin-bottom: 10px;
         }
 
-        .container {
-            max-width: 600px;
-            margin: auto;
+        .container p {
+	        text-align: center;
+	        color: #555;
+	        margin-bottom: 20px;
         }
 
         form {
@@ -58,11 +59,17 @@
 
         li {
             background: #fff;
-            padding: 12px;
-            margin-bottom: 10px;
-            border-radius: 5px;
-            box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
+            padding: 14px;
+            margin-bottom: 12px;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+            transition: transform 0.1s ease;
         }
+
+        li:hover {
+            transform: translateY(-2px);
+        }
+
 
         .task-info {
             margin-bottom: 8px;
@@ -98,6 +105,18 @@
         .btn-delete:hover {
             background: #cc0000;
         }
+
+        .actions {
+	        display: flex;
+	        gap: 6px;
+	        justify-content: flex-end;
+	        margin-top: 8px;
+        }
+
+        .actions form {
+            margin: 0;
+        }
+
     </style>
 </head>
 
@@ -127,13 +146,17 @@
             {{range .Todos}}
             <li>
                 <div class="task-info {{if .Done}}done{{end}}">
-                    <strong>{{.Task}}</strong><br>
+                    <strong>
+                        {{if .Done}}✅{{else}}🕒{{end}}
+                        {{.Task}}
+                    </strong><br>
                     期限：{{.Due}}　
                     時間：{{.Duration}}分　
                     費用：{{.Cost}}円
                 </div>
 
-                <div class="row">
+
+                <div class="actions">
                     <!-- 完了トグル -->
                     <form method="POST" action="/toggle">
                         <input type="hidden" name="id" value="{{.ID}}">

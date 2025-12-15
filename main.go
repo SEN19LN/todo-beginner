@@ -7,18 +7,20 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"time"
 
 	_ "github.com/lib/pq"
 )
 
 // Todo構造体
 type Todo struct {
-	ID       int
-	Task     string
-	Due      string
-	Duration int
-	Cost     int
-	Done     bool
+	ID           int
+	Task         string
+	Due          string
+	Duration     int
+	Cost         int
+	Done         bool
+	DueFormatted string
 }
 
 // DB変数（グローバル）
@@ -62,6 +64,33 @@ func initDB() {
 		log.Fatal("テーブル作成エラー:", err)
 	}
 	log.Println("DB準備完了")
+
+	// ------------------------------------------------------------
+	// 📌 ユーザーテーブル作成
+	// ------------------------------------------------------------
+	_, err = db.Exec(`
+	CREATE TABLE IF NOT EXISTS users (
+		id SERIAL PRIMARY KEY,
+		username TEXT UNIQUE NOT NULL,
+		password TEXT NOT NULL
+	)
+`)
+	if err != nil {
+		log.Fatal("users テーブル作成エラー:", err)
+	}
+
+	// ------------------------------------------------------------
+	// 📌 初期ユーザー（admin / 1234）を1回だけ作成
+	// ------------------------------------------------------------
+	_, err = db.Exec(`
+	INSERT INTO users (username, password)
+	VALUES ('admin', '1234')
+	ON CONFLICT (username) DO NOTHING
+`)
+	if err != nil {
+		log.Fatal("admin ユーザー作成エラー:", err)
+	}
+
 }
 
 // ------------------------------------------------------------
@@ -98,7 +127,16 @@ func main() {
 // 📌 トップページ（一覧表示）
 // ------------------------------------------------------------
 func handleIndex(w http.ResponseWriter, r *http.Request) {
-	rows, err := db.Query("SELECT id, task, due, duration, cost, done FROM todos ORDER BY id DESC")
+	// 🔒 ログインチェック
+	user, ok := getLoginUser(r)
+	if !ok {
+		http.Redirect(w, r, "/login", 303)
+		return
+	}
+
+	rows, err := db.Query(
+		"SELECT id, task, due, duration, cost, done FROM todos ORDER BY id DESC",
+	)
 	if err != nil {
 		http.Error(w, "データ取得エラー", 500)
 		return
@@ -109,25 +147,51 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var t Todo
 		rows.Scan(&t.ID, &t.Task, &t.Due, &t.Duration, &t.Cost, &t.Done)
+
+		// ★ 表示用の日付をここで作る
+		t.DueFormatted = formatDate(t.Due)
+
 		todos = append(todos, t)
 	}
 
-	// ★ テンプレートが期待する形（UserName + Todos）
-	data := struct {
+	// ユーザー名も一緒に渡す
+	templates.ExecuteTemplate(w, "tasks.html", struct {
 		UserName string
 		Todos    []Todo
 	}{
-		UserName: "admin", // 今は固定（後でログインユーザー名を入れる）
+		UserName: user,
 		Todos:    todos,
-	}
+	})
+}
 
-	templates.ExecuteTemplate(w, "tasks.html", data)
+// ------------------------------------------------------------
+// 📌 セッションCookie名
+// ------------------------------------------------------------
+const sessionName = "todo_session"
+
+// ------------------------------------------------------------
+// 📌 ログイン中ユーザー取得
+// Cookie があればログイン済みと判断する
+// ------------------------------------------------------------
+func getLoginUser(r *http.Request) (string, bool) {
+	c, err := r.Cookie(sessionName)
+	if err != nil || c.Value == "" {
+		return "", false
+	}
+	return c.Value, true
 }
 
 // ------------------------------------------------------------
 // 📌 新規追加
 // ------------------------------------------------------------
 func handleAdd(w http.ResponseWriter, r *http.Request) {
+	// 🔒 ログイン必須
+	_, ok := getLoginUser(r)
+	if !ok {
+		http.Redirect(w, r, "/login", 303)
+		return
+	}
+
 	if r.Method != "POST" {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
@@ -154,6 +218,13 @@ func handleAdd(w http.ResponseWriter, r *http.Request) {
 // 📌 完了トグル（Done <-> 未完了）
 // ------------------------------------------------------------
 func handleToggle(w http.ResponseWriter, r *http.Request) {
+	// 🔒 ログイン必須
+	_, ok := getLoginUser(r)
+	if !ok {
+		http.Redirect(w, r, "/login", 303)
+		return
+	}
+
 	if r.Method != "POST" {
 		http.Redirect(w, r, "/", 303)
 		return
@@ -178,6 +249,13 @@ func handleToggle(w http.ResponseWriter, r *http.Request) {
 // 📌 削除
 // ------------------------------------------------------------
 func handleDelete(w http.ResponseWriter, r *http.Request) {
+	// 🔒 ログイン必須
+	_, ok := getLoginUser(r)
+	if !ok {
+		http.Redirect(w, r, "/login", 303)
+		return
+	}
+
 	id := r.FormValue("id")
 	if id == "" {
 		http.Redirect(w, r, "/", 303)
@@ -197,6 +275,13 @@ func handleDelete(w http.ResponseWriter, r *http.Request) {
 // 📌 編集ページの表示（edit.html）
 // ------------------------------------------------------------
 func handleEditPage(w http.ResponseWriter, r *http.Request) {
+	// 🔒 ログイン必須
+	_, ok := getLoginUser(r)
+	if !ok {
+		http.Redirect(w, r, "/login", 303)
+		return
+	}
+
 	id := r.URL.Query().Get("id")
 
 	var t Todo
@@ -217,6 +302,13 @@ func handleEditPage(w http.ResponseWriter, r *http.Request) {
 // 📌 編集内容の保存
 // ------------------------------------------------------------
 func handleUpdate(w http.ResponseWriter, r *http.Request) {
+	// 🔒 ログイン必須
+	_, ok := getLoginUser(r)
+	if !ok {
+		http.Redirect(w, r, "/login", 303)
+		return
+	}
+
 	if r.Method != "POST" {
 		http.Redirect(w, r, "/", 303)
 		return
@@ -240,50 +332,76 @@ func handleUpdate(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", 303)
 }
 
+// ------------------------------------------------------------
+// 📌 ログイン処理
+// ------------------------------------------------------------
 func handleLogin(w http.ResponseWriter, r *http.Request) {
-
-	// GET → ログイン画面表示
-	if r.Method == "GET" {
+	if r.Method != "POST" {
 		templates.ExecuteTemplate(w, "login.html", nil)
 		return
 	}
 
-	// POST → 認証処理
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 
-	var userID int
-
+	var count int
 	err := db.QueryRow(
-		"SELECT id FROM users WHERE username = $1 AND password = $2",
+		"SELECT COUNT(*) FROM users WHERE username=$1 AND password=$2",
 		username, password,
-	).Scan(&userID)
+	).Scan(&count)
 
-	if err != nil {
-		// 認証失敗
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
+	if err != nil || count == 0 {
+		http.Error(w, "ログイン失敗", 401)
 		return
 	}
 
-	// ✅ 認証成功 → Cookie に user_id 保存
+	// ログイン成功 → Cookie 発行
 	http.SetCookie(w, &http.Cookie{
-		Name:  "user_id",
-		Value: strconv.Itoa(userID),
+		Name:  sessionName,
+		Value: username,
 		Path:  "/",
 	})
 
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	http.Redirect(w, r, "/", 303)
 }
 
 // ------------------------------------------------------------
-// 📌 ログアウト（※現状はログインなしなのでダミー）
+// 📌 ログアウト
+// Cookie を削除する
 // ------------------------------------------------------------
 func handleLogout(w http.ResponseWriter, r *http.Request) {
+
 	http.SetCookie(w, &http.Cookie{
-		Name:   "user_id",
+		Name:   sessionName,
 		Value:  "",
 		Path:   "/",
-		MaxAge: -1,
+		MaxAge: -1, // Cookie 削除
 	})
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
+	http.Redirect(w, r, "/login", 303)
+}
+
+// ------------------------------------------------------------
+// 📌 日付を YYYY-MM-DD 形式に整形
+// DBの値が 2025-12-12T00:00:00Z などでも安全
+// ------------------------------------------------------------
+func formatDate(d string) string {
+	if d == "" {
+		return ""
+	}
+
+	// PostgreSQL / HTML date 両対応
+	layouts := []string{
+		"2006-01-02",
+		time.RFC3339,
+		"2006-01-02T15:04:05Z07:00",
+	}
+
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, d); err == nil {
+			return t.Format("2006-01-02")
+		}
+	}
+
+	// パースできなければ元の文字列を返す（保険）
+	return d
 }

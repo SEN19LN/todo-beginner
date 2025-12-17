@@ -28,6 +28,7 @@ By using AI as a learning partner, I tried to:
 - finish the project instead of abandoning it halfway
 
 This app represents my learning process.
+This project also helped me understand how backend services are deployed and operated in a real environment.
 
 ## Tech Stack
 
@@ -48,6 +49,8 @@ This app represents my learning process.
   - Template rendering
 - Formatting display data in Go instead of HTML
 - Environment variable support for local and production use
+- Handling deployment-related issues such as environment variables and database connectivity
+
 
 ## How to Run (Local)
 

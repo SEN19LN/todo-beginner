@@ -23,12 +23,22 @@ At first, even reading simple code was difficult.
 Instead of aiming for perfect code, I focused on **building a working application step by step**.
 
 By using AI as a learning partner, I tried to:
+<<<<<<< HEAD
+
+=======
+
+> > > > > > > 23d3253794e97fb19f1d83fb24dc7a72e199b1e9
 
 - understand what each part of the code does
 - add features one by one
 - finish the project instead of abandoning it halfway
 
 This app represents my learning process.
+<<<<<<< HEAD
+=======
+This project also helped me understand how backend services are deployed and operated in a real environment.
+
+> > > > > > > 23d3253794e97fb19f1d83fb24dc7a72e199b1e9
 
 ## Tech Stack
 
@@ -49,6 +59,11 @@ This app represents my learning process.
   - Template rendering
 - Formatting display data in Go instead of HTML
 - Environment variable support for local and production use
+  <<<<<<< HEAD
+  =======
+- Handling deployment-related issues such as environment variables and database connectivity
+
+> > > > > > > 23d3253794e97fb19f1d83fb24dc7a72e199b1e9
 
 ## How to Run (Local)
 
@@ -58,6 +73,12 @@ This app represents my learning process.
 4. Then open:http://localhost:8080
 
 ## Future Plans
+
+<<<<<<< HEAD
+
+=======
+
+> > > > > > > 23d3253794e97fb19f1d83fb24dc7a72e199b1e9
 
 - Improve UI design
 - Add task priority

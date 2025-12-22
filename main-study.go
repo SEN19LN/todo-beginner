@@ -23,6 +23,7 @@ type Todo struct {
 	DueFormatted string
 }
 
+// DB変数（グローバル）
 var db *sql.DB
 
 // ------------------------------------------------------------
@@ -101,7 +102,7 @@ var templates = template.Must(template.ParseGlob("templates/*.html"))
 // 📌 ルーティング設定
 // ------------------------------------------------------------
 func main() {
-	initDB()
+	initDB() // DB初期化
 
 	http.HandleFunc("/", handleIndex)
 	http.HandleFunc("/add", handleAdd)
@@ -354,6 +355,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ログイン成功 → Cookie 発行
 	http.SetCookie(w, &http.Cookie{
 		Name:  sessionName,
 		Value: username,
